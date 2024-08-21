@@ -242,20 +242,8 @@ def visualize_corresp(k, f_dim, eval_smpl, evec_smpl, eval_rabit, evec_rabit, j_
 
     ps.show()
 
-
-
-'''
-TO-DOs:
-1. Compute the Degree of each node (joints)
-2. Match the deg(smpl) and deg(rabit) | deg(n1) = deg(n2) | (v1,u1), then deg(v1) == deg(u1)
-3. Compute the A: Association Graph, where nodes will be (n1,n2), where deg(n1) == deg(n2) [Pruned Graph]
-4. Edge weight will be calculated as the HKS/geodesic distance (geo. distance = edges covered) 
-5. Now, find the clique of this Graph
-'''
-
-
 # feature-wise geodesic distance
-def compute_association_mat(k, f_dim, eval_smpl, evec_smpl, eval_rabit, evec_rabit, joints, joints_rabit, adj_sparse):
+def compute_mat(k, f_dim, eval_smpl, evec_smpl, eval_rabit, evec_rabit, joints, joints_rabit, adj_sparse):
     hks_smpl = compute_hks(eval_smpl[:k], evec_smpl[:,:k], f_dim) #(B,V,feature_dim)
     hks_rabit = compute_hks(eval_rabit[:k], evec_rabit[:,:k], f_dim) #(B,V,feature_dim)
 
@@ -268,12 +256,15 @@ def compute_association_mat(k, f_dim, eval_smpl, evec_smpl, eval_rabit, evec_rab
     # initialize the Graph
     G_SMPL = nx.Graph()
     for idx, j in enumerate(joints):
+        print(f"smpl idx: {idx}")
         G_SMPL.add_node(idx)
     G_SMPL.add_edges_from(EDGES_SMPL) 
 
+    print("\n")
 
     G_RABIT = nx.Graph()
     for idx_r, j_r in enumerate(joints_rabit):
+        print(f"rabit idx: {idx_r}")
         G_RABIT.add_node(idx_r)
     G_RABIT.add_edges_from(EDGES_RABIT)    
 
@@ -284,21 +275,6 @@ def compute_association_mat(k, f_dim, eval_smpl, evec_smpl, eval_rabit, evec_rab
     # nx.draw(G_RABIT, with_labels=True, font_weight='bold')
     # plt.show()
 
-    '''Computing the degree of each nodes of SMPL and RaBit'''
-    smpl_degree = dict(G_SMPL.degree())
-    rabit_degree = dict(G_RABIT.degree)
-
-    same_degree_nodes = []
-    
-    for s_node, s_deg in smpl_degree.items():
-        for r_node, r_deg in rabit_degree.items():
-            print(f"SMPL degree: {s_deg}, \n and Rabit degree: {r_deg}")
-            if s_deg == r_deg:
-                same_degree_nodes.append([s_node, r_node])
-
-
-    breakpoint()
-    
     for i in range(24):
         for j in range(24):
             hks_s = hks_smpl[0][i] - hks_smpl[0][j]
@@ -341,7 +317,8 @@ def compute_association_mat(k, f_dim, eval_smpl, evec_smpl, eval_rabit, evec_rab
                     node1 = ((hks_smpl[0][i] - hks_rabit[0][j])**2).mean()
                     node2 = ((hks_smpl[0][k] - hks_rabit[0][l])**2).mean()
                     
-                    sigma = 0.1
+                    sigma = 0.000001
+                    # print(f"\n Sigma Values: {sigma_values} \n")
                     corresp_mat[(i*num_joints)+j, (k*num_joints)+l] = np.exp(-((node1-node2)**2)/sigma).mean() 
                     # corresp_mat[(i*num_joints)+j, (k*num_joints)+l] = np.mean((smpl_mat[i][j] - rabit_mat[k][l])**2)
 
@@ -368,7 +345,7 @@ def compute_association_mat(k, f_dim, eval_smpl, evec_smpl, eval_rabit, evec_rab
 # for i in range(num_joints**2):
 #     norm_corresp_mat[i] = (corresp_mat[i] - corresp_mat[i].min()) / (corresp_mat[i].max() - corresp_mat[i].min())
     corresp_mat = corresp_mat.numpy()
-    # norm_corresp_mat = norm_corresp_mat.numpy()
+    norm_corresp_mat = norm_corresp_mat.numpy()
     # norm_mat_corresp = (corresp_mat - corresp_mat.min()) / (corresp_mat.max() - corresp_mat.min())
 
     print(f"\n Correspondence Matrix: {corresp_mat} and Shape: {corresp_mat.shape}")
@@ -516,7 +493,7 @@ if __name__ == '__main__':
     # vis = visualize_corresp(K, feature_dim, eigenvalues_smpl, eigenvectors_smpl, 
     #                         eigenvalues_rabit, eigenvectors_rabit, joints, rabit_joints)
 
-    corresp_mat = compute_association_mat(K, feature_dim, eigenvalues_smpl, eigenvectors_smpl, eigenvalues_rabit, eigenvectors_rabit, joints, rabit_joints, adj_sparse)
+    corresp_mat = compute_mat(K, feature_dim, eigenvalues_smpl, eigenvectors_smpl, eigenvalues_rabit, eigenvectors_rabit, joints, rabit_joints, adj_sparse)
 
     print("-------------------------- \n")
     # print(laplacian_dense)

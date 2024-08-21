@@ -17,7 +17,7 @@ from tqdm import tqdm
 
 
 SMPL_PATH = './SMPL_NEUTRAL.pkl'
-RABIT_PATH = './rabit_joints.npy'
+RABIT_PATH = './joints_list.pkl'
 
 EDGES_SMPL = [(0,1), (0,2), (0,3), (2,5), (5,8), (8,11), (1,4), (4,7),(7,10),
               (3,6), (6,9), (9,14), (9,13), (13,16), (16,18), (18, 20), (20,22),
@@ -68,7 +68,7 @@ def load_smpl(filename):
 
 
 def load_rabit(filename):
-    rabit_joints = np.load(filename)
+    rabit_joints = np.load(filename,allow_pickle=True)
     print(f"Length of RaBit joints: {len(rabit_joints)}")
 
     return rabit_joints
@@ -246,16 +246,51 @@ def visualize_corresp(k, f_dim, eval_smpl, evec_smpl, eval_rabit, evec_rabit, j_
 
 '''
 TO-DOs:
-1. Compute the Degree of each node (joints)
-2. Match the deg(smpl) and deg(rabit) | deg(n1) = deg(n2) | (v1,u1), then deg(v1) == deg(u1)
+1. Compute the Degree of each node
+2. Match the deg(smpl) and deg(rabit) | deg(n1) = deg(n2)
 3. Compute the A: Association Graph, where nodes will be (n1,n2), where deg(n1) == deg(n2) [Pruned Graph]
 4. Edge weight will be calculated as the HKS/geodesic distance (geo. distance = edges covered) 
 5. Now, find the clique of this Graph
 '''
+def degree(edges,v):
+    for i,j in edges:
+        v[i]+=1
+        v[j]+=1
 
+def degree_match(a,b):
+    r=0
+    c=0
+    for i in range(len(a)):
+        for j in range(len(b)):
+            if a[i]==b[j]:
+                # d[r][c]=i
+                # d[r][c+1]=j
+                r+=1
+                
+    e=np.zeros((r,2))
+    h=0
+    for i in range(len(a)):
+        for j in range(len(b)):
+            if a[i]==b[j]:
+                e[h][c]=i
+                e[h][c+1]=j
+                h+=1
+                c=0
+    return e
 
+# def asso(d,joints1,joints2):
+#     ass=np.zeros(304,304)
+#     for i in range(304):
+#         for j in range(304):
+#             i1=d[i][0]
+#             i2=d[i][1]
+#             i3=d[j][0]
+#             i4=d[j][1]
+#             d1=(joints1[i][0]-joints1[j][0])**2+(joints1[i][1]-joints1[j][1])**2+(joints1[i][2]-joints1[j][2])**2
+#             d2=(joints2[i][0]-joints2[j][0])**2+(joints2[i][1]-joints2[j][1])**2+(joints2[i][2]-joints2[j][2])**2
+#             score=np.exp()
 # feature-wise geodesic distance
-def compute_association_mat(k, f_dim, eval_smpl, evec_smpl, eval_rabit, evec_rabit, joints, joints_rabit, adj_sparse):
+def compute_association_mat(k, f_dim, eval_smpl, evec_smpl, eval_rabit, evec_rabit, joints, joints_rabit, adj_sparse,d):
     hks_smpl = compute_hks(eval_smpl[:k], evec_smpl[:,:k], f_dim) #(B,V,feature_dim)
     hks_rabit = compute_hks(eval_rabit[:k], evec_rabit[:,:k], f_dim) #(B,V,feature_dim)
 
@@ -284,25 +319,18 @@ def compute_association_mat(k, f_dim, eval_smpl, evec_smpl, eval_rabit, evec_rab
     # nx.draw(G_RABIT, with_labels=True, font_weight='bold')
     # plt.show()
 
-    '''Computing the degree of each nodes of SMPL and RaBit'''
-    smpl_degree = dict(G_SMPL.degree())
-    rabit_degree = dict(G_RABIT.degree)
-
-    same_degree_nodes = []
-    
-    for s_node, s_deg in smpl_degree.items():
-        for r_node, r_deg in rabit_degree.items():
-            print(f"SMPL degree: {s_deg}, \n and Rabit degree: {r_deg}")
-            if s_deg == r_deg:
-                same_degree_nodes.append([s_node, r_node])
+    '''Finding the degree of each nodes of SMPL and RaBit'''
+    for smpl_joint in G_SMPL.nodes():
+        
+        print(f"Nodes of the SMPL: {smpl_joint}")
 
 
-    breakpoint()
     
     for i in range(24):
         for j in range(24):
             hks_s = hks_smpl[0][i] - hks_smpl[0][j]
             hks_r = hks_rabit[0][i] - hks_rabit[0][j]
+            '''Not needed at this point!'''
             smpl_mat[i][j] = np.linalg.norm(np.exp(-(hks_s**2)*(len(nx.shortest_path(G_SMPL, source=i, target=j)))))
             rabit_mat[i][j] = np.linalg.norm(np.exp(-(hks_r**2)*(len(nx.shortest_path(G_RABIT, source=i, target=j)))))
 
@@ -323,28 +351,69 @@ def compute_association_mat(k, f_dim, eval_smpl, evec_smpl, eval_rabit, evec_rab
 
     num_joints = 24
     
-    pair_nodes = torch.zeros((num_joints**2,f_dim))
-    for i in range(num_joints):
-        for j in range(num_joints):
-            pair_nodes[i*num_joints + j] = (hks_smpl[0][i] - hks_rabit[0][j])**2
-    pair_nodes = pair_nodes.numpy()
+    # pair_nodes = torch.zeros((num_joints**2,f_dim))
+    # for i in range(num_joints):
+    #     for j in range(num_joints):
+    #         pair_nodes[i*num_joints + j] = (hks_smpl[0][i] - hks_rabit[0][j])**2
+    # pair_nodes = pair_nodes.numpy()
 
-    sigma_values = np.arange(0.0, 0.3, 0.001)
+    # sigma_values = np.arange(0.0, 0.3, 0.001)
 
-    corresp_mat = torch.zeros((num_joints**2, num_joints**2))
-    norm_corresp_mat = torch.zeros((num_joints**2, num_joints**2))
+    # corresp_mat = torch.zeros((num_joints**2, num_joints**2))
+    # norm_corresp_mat = torch.zeros((num_joints**2, num_joints**2))
+    corresp_mat=np.zeros((304,304))
+    for i in range(304):
+        for j in range(304):
+            i1=d[i][0]
+            i2=d[i][1]
+            i3=d[j][0]
+            i4=d[j][1]
 
-    for i in range(num_joints):
-        for j in range(num_joints):
-            for k in range(num_joints):
-                for l in range(num_joints):
-                    node1 = ((hks_smpl[0][i] - hks_rabit[0][j])**2).mean()
-                    node2 = ((hks_smpl[0][k] - hks_rabit[0][l])**2).mean()
+            hks_s = hks_smpl[0][int(i1)] - hks_smpl[0][int(i3)]
+            hks_r = hks_rabit[0][int(i2)] - hks_rabit[0][int(i4)]
+            node1=(hks_s**2).mean()
+            node2=(hks_r**2).mean()
+            sigma = 0.0000001
+            corresp_mat[i][j]=np.exp(-((node1-node2)**2)/sigma).mean() 
+            # d1=(joints1[i][0]-joints1[j][0])**2+(joints1[i][1]-joints1[j][1])**2+(joints1[i][2]-joints1[j][2])**2
+            # d2=(joints2[i][0]-joints2[j][0])**2+(joints2[i][1]-joints2[j][1])**2+(joints2[i][2]-joints2[j][2])**2
+            # score=np.exp()
+    # for i in range(num_joints):
+    #     for j in range(num_joints):
+    #         for k in range(num_joints):
+    #             for l in range(num_joints):
+    #                 node1 = ((hks_smpl[0][i] - hks_rabit[0][j])**2).mean()
+    #                 node2 = ((hks_smpl[0][k] - hks_rabit[0][l])**2).mean()
                     
-                    sigma = 0.1
-                    corresp_mat[(i*num_joints)+j, (k*num_joints)+l] = np.exp(-((node1-node2)**2)/sigma).mean() 
+    #                 sigma = 0.1
+    #                 # print(f"\n Sigma Values: {sigma_values} \n")
+    #                 corresp_mat[(i*num_joints)+j, (k*num_joints)+l] = np.exp(-((node1-node2)**2)/sigma).mean() 
                     # corresp_mat[(i*num_joints)+j, (k*num_joints)+l] = np.mean((smpl_mat[i][j] - rabit_mat[k][l])**2)
+    row_sum=[]
+    sum=0
+    for i in range(304):
+        sum=0
+        for j in range(304):
+            sum+=corresp_mat[i][j]
+        row_sum.append(sum)
+    print(len(row_sum),row_sum)
 
+    indices = [idx for idx, x in enumerate(row_sum)]
+    row_values = dict(zip(indices, row_sum))
+    sort = {k: v for k, v in sorted(row_values.items(), key=lambda item: item[1])}
+    keys_in_reverse = list(reversed(sort.keys()))
+    check1=np.zeros(24)
+    run1=0
+    check2=np.zeros(24)
+    run2=0
+    for i in keys_in_reverse:
+        if(check1[int(d[i][0])]==0 and run1<24 and check2[int(d[i][1])]==0 and run2<24):
+            print(d[i][0],d[i][1])
+            check1[int(d[i][0])]=1
+            run1+=1
+            check2[int(d[i][1])]=1
+            run2+=1
+    breakpoint()    
     # corresp_mat = corresp_mat.numpy()
     # np.fill_diagonal(corresp_mat, 0)
     # A = nx.from_numpy_array(corresp_mat)
@@ -367,11 +436,12 @@ def compute_association_mat(k, f_dim, eval_smpl, evec_smpl, eval_rabit, evec_rab
 
 # for i in range(num_joints**2):
 #     norm_corresp_mat[i] = (corresp_mat[i] - corresp_mat[i].min()) / (corresp_mat[i].max() - corresp_mat[i].min())
-    corresp_mat = corresp_mat.numpy()
+    # corresp_mat = corresp_mat.numpy()
     # norm_corresp_mat = norm_corresp_mat.numpy()
     # norm_mat_corresp = (corresp_mat - corresp_mat.min()) / (corresp_mat.max() - corresp_mat.min())
 
     print(f"\n Correspondence Matrix: {corresp_mat} and Shape: {corresp_mat.shape}")
+    np.fill_diagonal(corresp_mat, 0)
     
     plt.imshow(corresp_mat)
     plt.title("Correspondence Matrix")
@@ -389,6 +459,7 @@ def compute_association_mat(k, f_dim, eval_smpl, evec_smpl, eval_rabit, evec_rab
     # Creating the Association matrix
     np.fill_diagonal(corresp_mat, 0) # diagonal entries = 0
     print(f"\n Corresp matrix after removing the diaginal: {corresp_mat}")
+    breakpoint()
     A = nx.from_numpy_array(corresp_mat)
 
     thresholds = [0.0, 0.900, 0.998, 1.0]
@@ -404,7 +475,6 @@ def compute_association_mat(k, f_dim, eval_smpl, evec_smpl, eval_rabit, evec_rab
 
     for node1, node2, attr in A.edges(data=True):
         weight = attr['weight']
-        # attr['affinity'] = weight
         affinities.append(weight)
 
     pos = nx.spring_layout(A, seed=7)
@@ -436,6 +506,9 @@ def compute_association_mat(k, f_dim, eval_smpl, evec_smpl, eval_rabit, evec_rab
         else:
             edge_colors.append('white')
 
+    GG = nx.from_numpy_array(corresp_mat)
+    nx.draw(GG, with_labels=True, node_color='lightblue', edge_color=edge_colors)
+    plt.show()
 
     # fig, axes = plt.subplots(1, 3, figsize=(20, 6))
     # for index, (subgraph, color) in enumerate(subgraphs):
@@ -447,9 +520,13 @@ def compute_association_mat(k, f_dim, eval_smpl, evec_smpl, eval_rabit, evec_rab
 
     # plt.tight_layout()
     # plt.show()
+    corresp = []
+    for i in edge_colors:
+        if i == 'blue':
+            corresp.append(i)
 
-    bins = np.linspace(0.0, 1.0, num=10)
     breakpoint()
+    bins = np.linspace(0.0, 1.0, num=10)
     plt.hist(affinities, color='skyblue', bins=bins, edgecolor='black')
     plt.ylim(0, len(affinities))
     plt.xlabel('Affinity')
@@ -509,14 +586,23 @@ if __name__ == '__main__':
 
     joints = load_smpl(SMPL_PATH)
     rabit_joints = load_rabit(RABIT_PATH)
-
+    a=np.zeros(24)
+    b=np.zeros(24)
+    degree(EDGES_SMPL,a)
+    degree(EDGES_RABIT,b)
+    print('a,b:',a,b)
+    # d1=[]
+    # d2=[]
+    d1=degree_match(a,b)
+    d2=degree_match(b,a)
+    print('d1,d2',d1,d2)
     print(f"SMPL Joints: {joints}")
 
     # visualizing the HKS for SMPL and RaBit
     # vis = visualize_corresp(K, feature_dim, eigenvalues_smpl, eigenvectors_smpl, 
     #                         eigenvalues_rabit, eigenvectors_rabit, joints, rabit_joints)
 
-    corresp_mat = compute_association_mat(K, feature_dim, eigenvalues_smpl, eigenvectors_smpl, eigenvalues_rabit, eigenvectors_rabit, joints, rabit_joints, adj_sparse)
+    corresp_mat = compute_association_mat(K, feature_dim, eigenvalues_smpl, eigenvectors_smpl, eigenvalues_rabit, eigenvectors_rabit, joints, rabit_joints, adj_sparse,d1)
 
     print("-------------------------- \n")
     # print(laplacian_dense)
